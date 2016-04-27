@@ -1,0 +1,23 @@
+sudo: required
+dist: trusty
+
+language: java
+jdk:
+- openjdk8
+- oraclejdk8
+
+env: GRADLE_OPTS="-Xms1g -Xmx3g"
+install: ./gradlew setupCIWorkspace
+script: ./gradlew build
+
+notifications:
+  email: false
+
+deploy:
+  file_glob: true
+  provider: releases
+  api-key: ${KEY}
+  file: "./build/libs/I.N. | Statistics*.jar"
+  skip_cleanup: true
+  on:
+    tags: true
