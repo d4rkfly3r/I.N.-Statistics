@@ -1,5 +1,7 @@
 package net.d4rkfly3r.plugins.in_statistics.src;
 
+import com.github.mustachejava.DefaultMustacheFactory;
+import com.github.mustachejava.Mustache;
 import com.google.gson.Gson;
 import com.google.inject.Inject;
 import net.d4rkfly3r.plugins.in_statistics.src.server.INStatisticsServer;
@@ -22,12 +24,14 @@ import org.spongepowered.api.plugin.Plugin;
 import org.spongepowered.api.plugin.PluginContainer;
 
 import javax.annotation.Nonnull;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
+import javax.annotation.Nullable;
+import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Plugin(id = "in-statistics", name = "I.N. | Statistics", authors = "Joshua Freedman (d4rkfly3r)", url = "https://d4rkfly3r.net")
 public class INStatistics {
@@ -47,6 +51,10 @@ public class INStatistics {
 
 
     final INStatisticsServer server = new INStatisticsServer();
+    private final HashMap<UUID, UserStatistics> userStats = new HashMap<UUID, UserStatistics>() {{
+        put(UUID.nameUUIDFromBytes("d4rkfly3r".getBytes()), new UserStatistics().setUsername("d4rkfly3r").incrementKills());
+    }};
+
     @Inject
     private Logger logger;
     @Inject
@@ -74,16 +82,26 @@ public class INStatistics {
     public void onGamePreIntitializationEvent(GamePreInitializationEvent event) {
         logger.info("Beginning " + container.getName() + " Initialization");
         logger.info("Version: " + container.getVersion().orElse("Unknown"));
+        try {
+            if (!Files.exists(privateConfigDir) || !Files.isDirectory(privateConfigDir)) {
+                Files.createDirectories(privateConfigDir);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         // TODO Read config (esp. database details if needed)
     }
 
     @Listener
     public void gameStartingServerEvent(GameStartingServerEvent event) {
         DefaultRoutes.getInstance().setRootConsumer((httpHeaderParser, socket, strings) -> {
-            System.out.println("Homepage...");
             // TODO Homepage
+            System.out.println("Users: ");
+            userStats.values().stream().collect(Collectors.toList()).forEach(System.out::println);
             try {
-                socket.getOutputStream().write(new FileResponse("index.html").getData());
+                socket.getOutputStream().write(new FileResponse("index.html", new HashMap<String, Object>() {{
+                    put("users", userStats.values().stream().collect(Collectors.toList()));
+                }}).getData());
                 socket.getOutputStream().flush();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -107,10 +125,12 @@ public class INStatistics {
     }
 
     public class FileResponse {
-        private byte[] data;
+        private final HashMap<String, Object> context;
+        byte[] data;
 
-        public FileResponse(@Nonnull String filename) throws IOException {
-            try (InputStream inputStream = INStatistics.class.getResourceAsStream("/assets/" + filename)) {
+        public FileResponse(@Nonnull String filename, @Nullable HashMap<String, Object> context) throws IOException {
+            this.context = context;
+            try (InputStream inputStream = Files.newInputStream(privateConfigDir.resolve(filename))) {
                 byte[] buffer = new byte[4096];
                 ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                 int read;
@@ -125,7 +145,10 @@ public class INStatistics {
 
         @Nonnull
         public byte[] getData() {
-            return data;
+            StringWriter stringWriter = new StringWriter();
+            Mustache mustache = new DefaultMustacheFactory().compile(new StringReader(new String(data)), "Server File");
+            mustache.execute(stringWriter, context);
+            return stringWriter.toString().getBytes();
         }
     }
 }
